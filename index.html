@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Online Voting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f6;--paper:#fff;--ink:#2b2a6b;--mark:#5b2d8e;--line:#c9cedb;--text:#1b1d2a;--muted:#5d6277}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Mukta',system-ui,Arial,sans-serif;font-size:18px;line-height:1.5}
+main{max-width:640px;margin:0 auto;padding:32px 16px 48px}
+.ballot{background:var(--paper);border:2px solid var(--ink);border-radius:4px;box-shadow:6px 6px 0 var(--ink)}
+header{padding:20px 24px;border-bottom:2px solid var(--ink)}
+h1{margin:0;font-size:30px;font-weight:800;color:var(--ink);line-height:1.15}
+header p{margin:6px 0 0;color:var(--muted);font-size:16px}
+.row{display:flex;align-items:center;gap:16px;width:100%;padding:16px 24px;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;text-align:left;cursor:pointer}
+.row:hover{background:#f6f4fb}
+.row:focus-visible{outline:3px solid var(--mark);outline-offset:-3px}
+.name{flex:1;font-weight:600}
+.name small{display:block;font-weight:400;color:var(--muted);font-size:15px}
+.box{width:44px;height:44px;border:2px solid var(--ink);border-radius:4px;display:grid;place-items:center;flex:none}
+.row[aria-checked=true]{background:#efe9f8}
+.row[aria-checked=true] .box::after{content:"";width:22px;height:22px;border-radius:50%;background:var(--mark)}
+.actions{padding:20px 24px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+button.main{background:var(--ink);color:#fff;border:0;border-radius:4px;padding:12px 28px;font:inherit;font-weight:600;cursor:pointer}
+button.main:disabled{background:#9a9cc0;cursor:not-allowed}
+button.main:focus-visible,button.link:focus-visible{outline:3px solid var(--mark);outline-offset:2px}
+button.link{background:none;border:0;color:var(--ink);font:inherit;text-decoration:underline;cursor:pointer;padding:8px}
+.msg{margin:0;color:#a02828;font-size:16px}
+.result{padding:8px 24px}
+.res{margin:14px 0}
+.res-top{display:flex;justify-content:space-between;font-weight:600}
+.bar{height:16px;background:#e3e5ee;border-radius:2px;margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ink);transition:width .5s}
+.res.win .bar i{background:var(--mark)}
+.done{display:flex;align-items:center;gap:14px;padding:18px 24px;border-bottom:1px solid var(--line);background:#efe9f8}
+.finger{width:30px;height:46px;background:var(--mark);border-radius:50% 50% 45% 45%/60% 60% 40% 40%;flex:none;transform:rotate(-8deg)}
+.done p{margin:0;font-weight:600}
+dialog{border:2px solid var(--ink);border-radius:4px;padding:24px;max-width:360px;font:inherit}
+dialog::backdrop{background:rgba(27,29,42,.55)}
+dialog p{margin:0 0 18px}
+dialog div{display:flex;gap:12px;justify-content:flex-end}
+button.ghost{background:none;border:2px solid var(--ink);color:var(--ink);border-radius:4px;padding:10px 20px;font:inherit;font-weight:600;cursor:pointer}
+footer{margin-top:24px;font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <div class="ballot">
+    <header>
+      <h1 id="title"></h1>
+      <p id="sub"></p>
+    </header>
+    <div id="view"></div>
+  </div>
+  <footer>
+    Demo version: votes are saved only in this browser. For a real election you need a backend and database (login, one vote per person, secure counting).
+  </footer>
+</main>
+
+<dialog id="dlg">
+  <p id="dlgText"></p>
+  <div>
+    <button class="ghost" id="no">Change</button>
+    <button class="main" id="yes">Cast my vote</button>
+  </div>
+</dialog>
+
+<script>
+/* ===== EDIT THIS PART ===== */
+const ELECTION = {
+  id: "college-2026",
+  title: "Class Representative Election",
+  subtitle: "Choose one candidate. You can vote only once.",
+  candidates: [
+    { id: "c1", name: "Candidate One", info: "Third year, Computer Science" },
+    { id: "c2", name: "Candidate Two", info: "Third year, Commerce" },
+    { id: "c3", name: "Candidate Three", info: "Second year, Science" }
+  ]
+};
+/* ========================== */
+
+const KEY = "votes:" + ELECTION.id, DONE = "voted:" + ELECTION.id;
+const $ = id => document.getElementById(id);
+let selected = null;
+
+function load(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } }
+function save(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e){ return false; } }
+
+$("title").textContent = ELECTION.title;
+$("sub").textContent = ELECTION.subtitle;
+
+function render(){
+  const voted = load(DONE, null);
+  voted ? showResults(voted) : showBallot();
+}
+
+function showBallot(){
+  const v = $("view");
+  v.innerHTML = "";
+  const list = document.createElement("div");
+  list.setAttribute("role", "radiogroup");
+  list.setAttribute("aria-label", "Candidates");
+  ELECTION.candidates.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "row";
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(selected === c.id));
+    b.innerHTML = '<span class="name"></span><span class="box"></span>';
+    b.querySelector(".name").innerHTML = "";
+    b.querySelector(".name").append(c.name);
+    const s = document.createElement("small"); s.textContent = c.info;
+    b.querySelector(".name").append(s);
+    b.onclick = () => { selected = c.id; $("err").textContent = ""; showBallot(); };
+    list.append(b);
+  });
+  v.append(list);
+  const a = document.createElement("div");
+  a.className = "actions";
+  a.innerHTML = '<button class="main" id="vote">Vote</button><button class="link" id="peek">View results</button><p class="msg" id="err" role="alert"></p>';
+  v.append(a);
+  $("vote").onclick = () => {
+    if (!selected) { $("err").textContent = "Select a candidate first."; return; }
+    const c = ELECTION.candidates.find(x => x.id === selected);
+    $("dlgText").textContent = "You are voting for " + c.name + ". You cannot change your vote later.";
+    $("dlg").showModal();
+  };
+  $("peek").onclick = () => showResults(null);
+}
+
+function showResults(votedFor){
+  const votes = load(KEY, {});
+  const total = ELECTION.candidates.reduce((n, c) => n + (votes[c.id] || 0), 0);
+  const max = Math.max(0, ...ELECTION.candidates.map(c => votes[c.id] || 0));
+  const v = $("view");
+  v.innerHTML = "";
+  if (votedFor) {
+    const c = ELECTION.candidates.find(x => x.id === votedFor);
+    const d = document.createElement("div");
+    d.className = "done";
+    d.innerHTML = '<span class="finger"></span><p></p>';
+    d.querySelector("p").textContent = "Your vote for " + (c ? c.name : "your candidate") + " is recorded.";
+    v.append(d);
+  }
+  const r = document.createElement("div");
+  r.className = "result";
+  ELECTION.candidates.forEach(c => {
+    const n = votes[c.id] || 0, pct = total ? Math.round(n * 100 / total) : 0;
+    const el = document.createElement("div");
+    el.className = "res" + (n && n === max ? " win" : "");
+    el.innerHTML = '<div class="res-top"><span></span><span></span></div><div class="bar"><i></i></div>';
+    const sp = el.querySelectorAll(".res-top span");
+    sp[0].textContent = c.name;
+    sp[1].textContent = n + (n === 1 ? " vote" : " votes") + " (" + pct + "%)";
+    el.querySelector("i").style.width = pct + "%";
+    r.append(el);
+  });
+  v.append(r);
+  const a = document.createElement("div");
+  a.className = "actions";
+  a.innerHTML = '<span>Total votes: <b></b></span><button class="link" id="reset">Reset (for testing)</button>';
+  a.querySelector("b").textContent = total;
+  v.append(a);
+  $("reset").onclick = () => {
+    if (confirm("Delete all votes saved in this browser?")) {
+      try { localStorage.removeItem(KEY); localStorage.removeItem(DONE); } catch(e){}
+      selected = null; render();
+    }
+  };
+}
+
+$("no").onclick = () => $("dlg").close();
+$("yes").onclick = () => {
+  $("dlg").close();
+  if (load(DONE, null)) return render();
+  const votes = load(KEY, {});
+  votes[selected] = (votes[selected] || 0) + 1;
+  if (save(KEY, votes) && save(DONE, selected)) render();
+  else { $("err").textContent = "Could not save your vote. Allow site storage in your browser and try again."; }
+};
+
+render();
+</script>
+</body>
+</html>
